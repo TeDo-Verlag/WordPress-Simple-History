@@ -86,13 +86,15 @@ class SimplePostLogger extends SimpleLogger
         // $prepared_post = stdClass Object with new and modified content.
         // changes are not saved to post in db yet, so get_post( $prepared_post->ID ) will get old contents.
 
-        // $old_post = post with old content and old meta
-        $old_post = get_post($prepared_post->ID);
+        if ($request['id']) {  // is null on creating entity
+            // $old_post = post with old content and old meta
+            $old_post = get_post($request['id']);
 
-        $this->old_post_data[$old_post->ID] = array(
-            'post_data' => $old_post,
-            'post_meta' => get_post_custom($old_post->ID)
-        );
+            $this->old_post_data[$old_post->ID] = array(
+                'post_data' => $old_post,
+                'post_meta' => get_post_custom($old_post->ID)
+            );
+        }
 
         return $prepared_post;
     }
@@ -948,6 +950,8 @@ class SimplePostLogger extends SimpleLogger
      * Modify plain output to include link to post.
      *
      * @param array $row Row data.
+     *
+     * @return string
      */
     public function getLogRowPlainTextOutput($row)
     {
@@ -1004,6 +1008,8 @@ class SimplePostLogger extends SimpleLogger
      * Get details output for row.
      *
      * @param array $row Row data.
+     *
+     * @return string
      */
     public function getLogRowDetailsOutput($row)
     {
@@ -1017,10 +1023,16 @@ class SimplePostLogger extends SimpleLogger
             $diff_table_output = '';
             $has_diff_values = false;
 
+            $separately_outputted_fields = array('thumb_id', 'thumb_title'); // some other?
+
             foreach ($context as $key => $val) {
                 if (strpos($key, 'post_prev_') !== false) {
                     // Old value exists, new value must also exist for diff to be calculates.
                     $key_to_diff = substr($key, strlen('post_prev_'));
+
+                    if (in_array($key_to_diff, $separately_outputted_fields)) {
+                        continue;
+                    }
 
                     $key_for_new_val = "post_new_{$key_to_diff}";
 
@@ -1286,7 +1298,7 @@ class SimplePostLogger extends SimpleLogger
 
     protected function label_for($key, $label, $context)
     {
-        return apply_filters('simple_history/post_logger/label_for_key', $label, $key, $context);
+        return esc_html(apply_filters('simple_history/post_logger/label_for_key', $label, $key, $context));
     }
 
     public function extra_diff_record($key, $old_value, $new_value)
@@ -1297,9 +1309,12 @@ class SimplePostLogger extends SimpleLogger
     /**
      * Modify RSS links to they go directly to the correct post in wp admin
      *
-     * @since 2.0.23
      * @param string $link Link.
-     * @param array  $row Row.
+     * @param array  $row  Row.
+     *
+     * @return string
+     *
+     * @since 2.0.23
      */
     public function filter_rss_item_link($link, $row)
     {
@@ -1397,7 +1412,6 @@ class SimplePostLogger extends SimpleLogger
             $new_attached_file = get_attached_file($new_thumb_id);
             $new_thumb_src = wp_get_attachment_image_src($new_thumb_id, 'small');
 
-            $prev_thumb_html = '';
             if (file_exists($prev_attached_file) && $prev_thumb_src) {
                 $prev_thumb_html = sprintf(
                     '
@@ -1414,7 +1428,6 @@ class SimplePostLogger extends SimpleLogger
                 $prev_thumb_html = sprintf('<div>%1$s</div>', esc_html($post_prev_thumb_title));
             }
 
-            $new_thumb_html = '';
             if (file_exists($new_attached_file) && $new_thumb_src) {
                 $new_thumb_html = sprintf(
                     '
@@ -1428,8 +1441,10 @@ class SimplePostLogger extends SimpleLogger
                 );
             } else {
                 // Fallback if image does not exist.
-                $prev_thumb_html = sprintf('<div>%1$s</div>', esc_html($post_new_thumb_title));
+                $new_thumb_html = sprintf('<div>%1$s</div>', esc_html($post_new_thumb_title));
             }
+
+            $label = __('Featured image', 'simple-history');
 
             $out .= sprintf(
                 '<tr>
@@ -1454,7 +1469,7 @@ class SimplePostLogger extends SimpleLogger
 
 					</td>
 				</tr>',
-                esc_html(__('Featured image', 'simple-history')), // 1
+                $this->label_for('thumb_id', $label, $context), // 1
                 $prev_thumb_html, // 2
                 $new_thumb_html // 3
             );
